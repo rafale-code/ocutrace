@@ -307,6 +307,56 @@ def segment_fluid(
     return np.array(label_img, dtype=np.int32)
 
 
+def segment_fluid_heuristic(scan: np.ndarray) -> np.ndarray:
+    """
+    Deterministic fallback segmentation for demo mode when no weights are available.
+
+    Detects hyporeflective pockets inside the retinal band and assigns a coarse
+    class based on vertical position so the demo still produces stable overlays.
+    """
+    h, w = scan.shape
+    smooth = ndimage.gaussian_filter(scan.astype(np.float32), sigma=1.2)
+
+    row_baseline = np.median(smooth, axis=1, keepdims=True)
+    darkness = np.clip(row_baseline - smooth, 0.0, None)
+
+    retinal_band = np.zeros_like(smooth, dtype=bool)
+    retinal_band[int(h * 0.16):int(h * 0.82), :] = True
+
+    label_map = np.zeros((h, w), dtype=np.int32)
+    if not np.any(retinal_band):
+        return label_map
+
+    retinal_darkness = darkness[retinal_band]
+    darkness_threshold = max(0.06, float(np.quantile(retinal_darkness, 0.93)))
+    intensity_threshold = float(np.quantile(smooth[retinal_band], 0.45))
+
+    candidate = (darkness > darkness_threshold) & retinal_band & (smooth < intensity_threshold)
+    candidate = ndimage.binary_opening(candidate, structure=np.ones((3, 3), dtype=bool))
+    candidate = ndimage.binary_closing(candidate, structure=np.ones((5, 5), dtype=bool))
+    candidate = ndimage.binary_fill_holes(candidate)
+
+    components, num_components = ndimage.label(candidate)
+    min_component_px = max(24, int(0.0002 * h * w))
+
+    for component_idx in range(1, num_components + 1):
+        component_mask = components == component_idx
+        if int(component_mask.sum()) < min_component_px:
+            continue
+
+        center_row = float(np.where(component_mask)[0].mean()) / max(h, 1)
+        if center_row < 0.58:
+            label = 1  # IRF
+        elif center_row < 0.72:
+            label = 2  # SRF
+        else:
+            label = 3  # PED
+
+        label_map[component_mask] = label
+
+    return label_map
+
+
 def extract_biomarkers(label_map: np.ndarray, px_area_mm2: float = 1e-4) -> dict:
     """
     Extract quantitative biomarkers from a segmentation label map.
@@ -658,13 +708,18 @@ class OcuTraceDiffEngine:
     """
 
     def __init__(self, weights_path: Optional[str] = None):
-        self.model = UNet(in_channels=1, out_channels=4).to(DEVICE)
-        if weights_path and Path(weights_path).exists():
+        self.model: Optional[UNet] = None
+        self.has_trained_weights = bool(weights_path and Path(weights_path).exists())
+
+        if self.has_trained_weights:
+            self.model = UNet(in_channels=1, out_channels=4).to(DEVICE)
             self.model.load_retouch_weights(weights_path)
         else:
-            _safe_print("[OcuTrace] No pretrained weights - using random init.")
-            _safe_print("           Download RETOUCH weights and pass weights_path= for real segmentation.")
-        self.model.eval()
+            _safe_print("[OcuTrace] No pretrained weights - using heuristic fallback segmentation.")
+            _safe_print("           Provide RETOUCH weights for real clinical-quality segmentation.")
+
+        if self.model is not None:
+            self.model.eval()
 
     def run(
         self,
@@ -703,11 +758,16 @@ class OcuTraceDiffEngine:
         else:
             t2_reg = t2
 
-        _safe_print("[OcuTrace] Segmenting fluid (T1)...")
-        label_t1 = segment_fluid(self.model, t1, original_shape=t1.shape)
+        if self.model is not None:
+            _safe_print("[OcuTrace] Segmenting fluid (T1)...")
+            label_t1 = segment_fluid(self.model, t1, original_shape=t1.shape)
 
-        _safe_print("[OcuTrace] Segmenting fluid (T2)...")
-        label_t2 = segment_fluid(self.model, t2_reg, original_shape=t1.shape)
+            _safe_print("[OcuTrace] Segmenting fluid (T2)...")
+            label_t2 = segment_fluid(self.model, t2_reg, original_shape=t1.shape)
+        else:
+            _safe_print("[OcuTrace] Segmenting fluid with heuristic fallback (T1/T2)...")
+            label_t1 = segment_fluid_heuristic(t1)
+            label_t2 = segment_fluid_heuristic(t2_reg)
 
         _safe_print("[OcuTrace] Computing diff map...")
         diff_map = compute_diff(label_t1, label_t2)
