@@ -22,6 +22,7 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 from PIL import Image
+from streamlit.errors import StreamlitSecretNotFoundError
 
 # Local modules
 from diff_engine import OcuTraceDiffEngine, generate_synthetic_result
@@ -298,7 +299,7 @@ def get_secret(name: str, default: str = "") -> str:
     try:
         if name in st.secrets:
             return str(st.secrets[name])
-    except Exception:
+    except StreamlitSecretNotFoundError:
         pass
     return os.environ.get(name, default)
 

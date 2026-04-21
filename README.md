@@ -37,5 +37,5 @@ If you skip the secret, the app still works and falls back to a rule-based repor
 
 ## Notes
 
-- The `RETOUCH weights path` field is optional. If you don't provide weights, the segmentation model uses random initialization, which is fine for demo mode but not for real clinical-quality output.
+- The `RETOUCH weights path` field is optional. If you don't provide weights, OcuTrace falls back to a deterministic heuristic segmentation path so demo mode still renders stable overlays. For real clinical-quality output, provide RETOUCH weights.
 - Demo mode works without uploads and is the fastest way to verify a cloud deployment.
