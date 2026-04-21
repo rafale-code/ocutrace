@@ -295,8 +295,11 @@ def load_engine(weights_path=None):
 
 def get_secret(name: str, default: str = "") -> str:
     """Read a setting from Streamlit secrets first, then environment variables."""
-    if name in st.secrets:
-        return str(st.secrets[name])
+    try:
+        if name in st.secrets:
+            return str(st.secrets[name])
+    except Exception:
+        pass
     return os.environ.get(name, default)
 
 
