@@ -506,25 +506,27 @@ def _diff_to_rgb(scan: np.ndarray, diff: np.ndarray) -> np.ndarray:
       Red    = new/worsening fluid (+1)
       Gray   = unchanged (0)
     """
-    base = np.clip(scan * 0.82 + 0.12, 0, 1)
+    # Dim the base scan so colours have contrast against both dark and light UI
+    base = np.clip(scan * 0.60 + 0.08, 0, 1)
     rgb = np.stack([base, base, base], axis=2)
-    alpha = 0.34
+    alpha = 0.72  # strong fill so regions are unmistakable
 
-    # Resolved (green)
+    # Resolved (green) ─ fluid that shrank between visits
     mask_res = diff == -1
-    edge_res = ndimage.binary_dilation(mask_res, iterations=2) ^ ndimage.binary_erosion(mask_res, iterations=1)
-    rgb[mask_res, 0] = rgb[mask_res, 0] * (1 - alpha) + 0.24 * alpha
-    rgb[mask_res, 1] = rgb[mask_res, 1] * (1 - alpha) + 0.73 * alpha
-    rgb[mask_res, 2] = rgb[mask_res, 2] * (1 - alpha) + 0.55 * alpha
-    rgb[edge_res] = np.array([0.06, 0.82, 0.59], dtype=np.float32)
+    # Widen edge so it is clearly visible at any zoom
+    edge_res = ndimage.binary_dilation(mask_res, iterations=4) ^ ndimage.binary_erosion(mask_res, iterations=1)
+    rgb[mask_res, 0] = rgb[mask_res, 0] * (1 - alpha) + 0.10 * alpha
+    rgb[mask_res, 1] = rgb[mask_res, 1] * (1 - alpha) + 0.82 * alpha
+    rgb[mask_res, 2] = rgb[mask_res, 2] * (1 - alpha) + 0.45 * alpha
+    rgb[edge_res] = np.array([0.02, 0.90, 0.50], dtype=np.float32)  # vivid green edge
 
-    # New fluid (red)
+    # New fluid (red) ─ fluid that appeared or worsened
     mask_new = diff == 1
-    edge_new = ndimage.binary_dilation(mask_new, iterations=2) ^ ndimage.binary_erosion(mask_new, iterations=1)
-    rgb[mask_new, 0] = rgb[mask_new, 0] * (1 - alpha) + 0.94 * alpha
-    rgb[mask_new, 1] = rgb[mask_new, 1] * (1 - alpha) + 0.36 * alpha
-    rgb[mask_new, 2] = rgb[mask_new, 2] * (1 - alpha) + 0.27 * alpha
-    rgb[edge_new] = np.array([0.95, 0.27, 0.24], dtype=np.float32)
+    edge_new = ndimage.binary_dilation(mask_new, iterations=4) ^ ndimage.binary_erosion(mask_new, iterations=1)
+    rgb[mask_new, 0] = rgb[mask_new, 0] * (1 - alpha) + 0.95 * alpha
+    rgb[mask_new, 1] = rgb[mask_new, 1] * (1 - alpha) + 0.18 * alpha
+    rgb[mask_new, 2] = rgb[mask_new, 2] * (1 - alpha) + 0.18 * alpha
+    rgb[edge_new] = np.array([1.00, 0.12, 0.12], dtype=np.float32)  # vivid red edge
 
     return np.clip(rgb, 0, 1)
 
