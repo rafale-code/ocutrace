@@ -24,7 +24,7 @@ import streamlit as st
 from PIL import Image
 
 # Local modules
-from diff_engine import OcuTraceDiffEngine, generate_synthetic_pair
+from diff_engine import OcuTraceDiffEngine, generate_synthetic_result
 from narrator import OcuTraceNarrator, rule_based_report
 
 
@@ -471,23 +471,17 @@ with run_col:
 # ─────────────────────────────────────────────────────────────────────────────
 
 if run_clicked and scans_ready:
-    engine = load_engine(weights_path or None)
     dates  = [str(visit_date_1), str(visit_date_2)]
 
     with st.spinner("Running pipeline - registration -> segmentation -> diff..."):
         try:
             if use_synthetic:
-                t1_arr, t2_arr = generate_synthetic_pair(512, 512, seed=42)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as f1, \
-                     tempfile.NamedTemporaryFile(delete=False, suffix=".png") as f2:
-                    Image.fromarray((t1_arr * 255).astype(np.uint8)).save(f1.name)
-                    Image.fromarray((t2_arr * 255).astype(np.uint8)).save(f2.name)
-                    t1_path, t2_path = Path(f1.name), Path(f2.name)
+                result = generate_synthetic_result(visit_dates=dates, seed=42)
             else:
+                engine = load_engine(weights_path or None)
                 t1_path = save_temp(upload_t1)
                 t2_path = save_temp(upload_t2)
-
-            result = engine.run(t1_path, t2_path, visit_dates=dates)
+                result = engine.run(t1_path, t2_path, visit_dates=dates)
             st.session_state.diff_result = result
             st.success("Pipeline complete.")
 
